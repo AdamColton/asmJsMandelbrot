@@ -1,0 +1,607 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Asm.js Mandelbrot</title>
+    <meta charset="UTF-8">
+    <style>
+      #buffer{
+        display:none;
+      }
+      *{
+        margin: 0;
+        padding: 0;
+      }
+      html, body{
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      canvas{
+        position: absolute;
+      }
+    </style>
+  </head>
+  <body id="body">
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <canvas id="buffer" width="800" height="600"></canvas>
+    <script type="application/javascript">
+    function Mand(stdlib, foreign, heap) {
+  "use asm";
+
+  var uint8 = new stdlib.Uint8Array(heap);
+  var imul = stdlib.Math.imul;
+  var log = stdlib.Math.log;
+
+  function mandZebra(xStart, xStep, yStart, yStep,w,h){
+    xStart=+xStart;
+    xStep=+xStep;
+    yStart=+yStart;
+    yStep=+yStep;
+    w=w|0;
+    h=h|0;
+    var x=0,y=0,p=0,z=0,p2=0,p3=0,s=0,d=0,c=0, dv=0,swtch=0;
+
+    for(y=0; (y|0) < (h|0); y = (y+1)|0 ){
+      for(x=0; (x|0) < (w|0); x = (x+1)|0 ){
+        z = compZebra( xStart+((+xStep) * (+~~x)), yStart+((+yStep) * (+~~y)))|0;
+        swtch = z & 3;
+        z = ((z>>2) + swtch)|0;
+        if ( ((z|0) < 127) & ((z|0) > 0) ) {
+          z = (255-z)|0;
+        }
+
+        uint8[p>>0] = rPlt(z,swtch)|0;
+        uint8[(p+1)>>0] = gPlt(z,swtch)|0;
+        uint8[(p+2)>>0] = bPlt(z,swtch)|0;
+        uint8[(p+3)>>0]=255;
+        p = (p+4)|0;
+      }
+    }
+    //do smoothing
+    // p: start of 'data', storing original state of prev 2 rows before smoothing
+    // p2: pointer to current data slot
+    // p3: pointer to current image slot
+    s=(imul(w,4))|0; // s size of row in bytes
+    p3 = 0;
+    for(y=0; (y|0) < (h|0); y = (y+1)|0 ){
+      p2=p;
+      for(x=0; (x|0) < (w|0); x = (x+1)|0 ){
+        for(c=0; (c|0) < (4|0); c = (c+1)|0 ){
+          // copy prev row original data back one
+          uint8[(p2+s)>>0] = uint8[(p2)>>0];
+          // copy cur row data into preserve
+          uint8[(p2)>>0] = uint8[(p3)>>0];
+          // increment pointers
+          p2 = (p2+1)|0;
+          p3 = (p3+1)|0;
+        }
+      }
+      p2=p;
+      p3 = (p3-s)|0;
+      // average each cell with the 8 surrounding
+      for(x=0; (x|0) < (w|0); x = (x+1)|0 ){
+        // average each cell with the 8 surrounding
+        for(c=0; (c|0) < (4|0); c = (c+1)|0 ){
+          d = uint8[(p2)>>0]|0;
+          dv = 1;
+          
+          if ( (x|0) > 0){
+            d = (d + (uint8[(p2-4)>>0]|0) )|0;
+            dv = (dv+1)|0;
+            if ( (y|0) > 0){
+              d = (d + (uint8[(p2+s-4)>>0]|0) )|0;
+              dv = (dv+1)|0;
+            }
+            if ( ((y+1)|0) < (h|0) ){
+              d = (d + (uint8[(p3+s-4)>>0]|0) )|0;
+              dv = (dv+1)|0;
+            }
+          }
+          if ( ((x+1)|0) < (w|0) ){
+            d = (d + (uint8[(p2+4)>>0]|0) )|0;
+            dv = (dv+1)|0;
+            if ( (y|0) > 0){
+              d = (d + (uint8[(p2+s+4)>>0]|0) )|0;
+              dv = (dv+1)|0;
+            }
+            if ( ((y+1)|0) < (h|0) ){
+              d = (d + (uint8[(p3+s+4)>>0]|0))|0;
+              dv = (dv+1)|0;
+            }
+          }
+
+          if ( (y|0) > 0){
+            d = (d + (uint8[(p2+s)>>0]|0) )|0;
+            dv = (dv+1)|0;
+          }
+          if ( ((y+1)|0) < (h|0) ){
+            d = (d + (uint8[(p3+s)>>0]|0) )|0;
+            dv = (dv+1)|0;
+          }
+
+          uint8[p3>>0] = ((d|0)/(dv|0))|0;
+
+          p3 = (p3+1)|0;
+          p2 = (p2+1)|0;
+        }
+      }
+    }
+  }
+
+  /*
+    c0: 255 ,163,11   => 91715
+    c1: 21  ,93, 192
+    c2: 255 ,74, 7
+    c3: 0   ,146, 80
+
+    switch 2 and 0
+  */  
+
+  function rPlt(z,swtch){
+    z=z|0;
+    swtch=swtch|0;
+    if ( (z|0) == 255){
+      return 255;
+    }
+    if ( (z|0) == 0){
+      return 0;
+    }
+
+    if ( ((swtch|0) == 0) | ((swtch|0) == 2)){
+      return z|0;
+    }
+    if  ((swtch|0) == 1) {
+      return ( (imul(z,21)|0) / (255|0) )|0;
+    }
+    return 0;
+  }
+
+  function gPlt(z,swtch){
+    z=z|0;
+    swtch=swtch|0;
+    if ( (z|0) == 255){
+      return 255;
+    }
+    if ( (z|0) == 0){
+      return 0;
+    }
+
+    if  ((swtch|0) == 2) {
+      return ( (imul(z,163)|0) / (255|0) )|0;
+    }
+    if  ((swtch|0) == 1) {
+      return ( (imul(z,93)|0) / (255|0) )|0;
+    }
+    if  ((swtch|0) == 0) {
+      return ( (imul(z,74)|0) / (255|0) )|0;
+    }
+    return ( (imul(z,146)|0) / (255|0) )|0;
+  }
+
+  function bPlt(z,swtch){
+    z=z|0;
+    swtch=swtch|0;
+    if ( (z|0) == 255){
+      return 255;
+    }
+    if ( (z|0) == 0){
+      return 0;
+    }
+
+    if  ((swtch|0) == 2) {
+      return ( (imul(z,11)|0) / (255|0) )|0;
+    }
+    if  ((swtch|0) == 1) {
+      return ( (imul(z,192)|0) / (255|0) )|0;
+    }
+    if  ((swtch|0) == 0) {
+      return ( (imul(z,7)|0) / (255|0) )|0;
+    }
+    return ( (imul(z,80)|0) / (255|0) )|0;
+  }
+
+  function compZebra(j,i){
+    j = +j;
+    i = +i;
+    var c=0, ci=0.0, cj=0.0, ti=0.0;
+    ci = +i;
+    cj = +j;
+    for(;(c|0) < (1020|0) ;c=(c+1)|0){
+      ti = +i;
+      i = +( ( (+2) * (+i) * (+j)) + ci);
+      j = +( (j*j) - (ti*ti) + cj);
+      if ( +( (i*i) + (j*j)) > +(800.0)) {
+        return (c|0);
+      }
+    }
+    return (c|0);
+  }
+
+  function mandSmooth(xStart, xStep, yStart, yStep,w,h){
+    xStart=+xStart;
+    xStep=+xStep;
+    yStart=+yStart;
+    yStep=+yStep;
+    w=w|0;
+    h=h|0;
+    var x=0,y=0,p=0,z=0.0;
+
+    for(y=0; (y|0) < (h|0); y = (y+1)|0 ){
+      for(x=0; (x|0) < (w|0); x = (x+1)|0 ){
+        z = +compSmooth( xStart+((+xStep) * (+~~x)), yStart+((+yStep) * (+~~y)));
+        setColor(p,z);
+        p = (p+4)|0;
+      }
+    }
+  } 
+  
+  function compSmooth(j,i){
+    j = +j;
+    i = +i;
+    var c=0, i0=0.0, j0=0.0, ti=0.0, z=0.0, l=0.0, n=0.0;
+    i0 = +i;
+    j0 = +j;
+    for(;(c|0) < (1600|0) ;c=(c+1)|0) {
+      ti = +i;
+      i = +( ( (+2) * (+i) * (+j)) + i0);
+      j = +( (j*j) - (ti*ti) + j0);
+      if ( +( (i*i) + (j*j)) > +(200.0)) {
+        break;
+      }
+    }
+    
+    if ( (c|0) < (1600|0) ){
+      l = log( (j*j) + (i*i) ) / 2.0;
+      n = log(l / 0.6931471805599453) / 0.6931471805599453;
+      return ((+~~c)/4.0 + 1.0) - (+n);
+    }
+    return 400.0;
+  }
+
+  /*
+    c0: 255 ,163,11   => 91715
+    c1: 21  ,93, 192
+    c2: 255 ,74, 7
+    c3: 0   ,146, 80
+
+    switch 2 and 0
+    http://projects.adamcolton.net/asmjs/mandelbrot2.php#-0.9187749308951645,-0.8838944397504919,-0.32015709600419173,-0.30778542180131574
+    */ 
+
+  function setColor(p,z){
+    p=p|0;
+    z=+z;
+    var swtch=0;
+
+    if ( z > 399.9){
+      uint8[(p)>>0]=0;
+      uint8[(p+1)>>0]=0;
+      uint8[(p+2)>>0]=0;
+      uint8[(p+3)>>0]=255;
+      return
+    }
+
+    swtch = ((z>100.0) + (z>200.0) + (z>300.0))|0;
+    z = (z - (+~~swtch*100.0))/100.0;
+    uint8[(p+3)>>0]=255;
+
+    if( (swtch|0) == (0|0) ){
+      uint8[p>>0] = ( (255|0) - (~~(234.0 * z)|0) )|0;
+      uint8[(p+1)>>0] = ( (163|0) - (~~(70.0 * z)|0) )|0;
+      uint8[(p+2)>>0] = ( (11|0) + (~~(181.0 * z)|0) )|0;
+      return;
+    }
+    if( (swtch|0) == (1|0) ){
+      uint8[p>>0] = ( (21|0) + (~~(234.0 * z)|0) )|0;
+      uint8[(p+1)>>0] = ( (93|0) - (~~(19.0 * z)|0) )|0;
+      uint8[(p+2)>>0] = ( (192|0) - (~~(185.0 * z)|0) )|0;
+      return;
+    }
+    if( (swtch|0) == (2|0) ){
+      uint8[p>>0] = ( (255|0) - (~~(255.0 * z)|0) )|0;
+      uint8[(p+1)>>0] = ( (74|0) + (~~(72.0 * z)|0) )|0;
+      uint8[(p+2)>>0] = ( (7|0) + (~~(73.0 * z)|0) )|0;
+      return;
+    }
+    if( (swtch|0) == (3|0) ){
+      uint8[p>>0] = ( (0|0) + (~~(255.0 * z)|0) )|0;
+      uint8[(p+1)>>0] = ( (146|0) - (~~(17.0 * z)|0) )|0;
+      uint8[(p+2)>>0] = ( (80|0) - (~~(69.0 * z)|0) )|0;
+      return;
+    }
+    return;
+  }
+
+  return {
+    mandSmooth:mandSmooth,
+    mandZebra:mandZebra
+  };
+}
+
+var DrawData = Object.create(null);
+
+window.onload = function(){
+  DrawData.buf = document.getElementById("buffer");
+  DrawData.ctx = DrawData.buf.getContext("2d");
+  DrawData.cvs = document.getElementById("canvas")
+  DrawData.ctxcvs = DrawData.cvs.getContext("2d");
+
+  var body = document.getElementById("body");
+  DrawData.buf.width = body.offsetWidth;
+  DrawData.buf.height = body.offsetHeight;
+  DrawData.cvs.width = body.offsetWidth;
+  DrawData.cvs.height = body.offsetHeight;
+
+  DrawData.w = DrawData.buf.width;
+  DrawData.h = DrawData.buf.height;
+  DrawData.blockSize = 100
+  DrawData.imgData = DrawData.ctx.createImageData(DrawData.blockSize, DrawData.blockSize)
+  DrawData.heap = new DataView(new ArrayBuffer(DrawData.imgData.data.length + DrawData.blockSize*8));
+  var m = Mand(window, null, DrawData.heap.buffer);
+  DrawData.zebra = m.mandZebra;
+  DrawData.smooth = m.mandSmooth;
+
+  DrawData.instructionState = 0;
+
+  draw();
+
+  DrawData.captureMouse = false;
+  DrawData.resizing = false;
+  DrawData.cvs.onmousedown = handleMousedownEvent;
+  DrawData.cvs.onmouseup = handleMandMouseupEvent;
+  window.onmouseup = handleWindowMouseUpEvent;
+  window.onresize = handleResize;
+}
+
+function handleResize(){
+  if (DrawData.drawing){
+    setTimeout(handleResize, 30)
+    return;
+  }
+  window.onresize = null;
+  setTimeout(setResize, 25);
+  clearTimeout(DrawData.resizeTimer);
+  DrawData.resizeTimer = setTimeout(resizeDone, 100);
+}
+
+function resizeDone(){
+  DrawData.buf.width = body.offsetWidth;
+  DrawData.buf.height = body.offsetHeight;
+  DrawData.cvs.width = body.offsetWidth;
+  DrawData.cvs.height = body.offsetHeight;
+
+  DrawData.w = DrawData.buf.width;
+  DrawData.h = DrawData.buf.height;
+  draw();
+}
+
+function setResize(){
+  DrawData.resizing = false;
+  window.onresize = handleResize;
+}
+
+function getCoords(){
+  var coords = correctAspect(-1.5, 0.75, -1.125, 1.125);
+  var anch = window.location.href.split('#')[1];
+  if (anch === undefined){
+    return coords;
+  }
+  var lst = anch.split(",");
+  if (lst.length < 4){
+    return coords;
+  }
+  return lst.splice(0,4).map(parseFloat);
+}
+
+function getMode(toggle){
+  toggle = !!toggle;
+  var anch = window.location.href.split('#')[1];
+  if (anch === undefined){
+    if (toggle){
+      return "smooth"
+    }
+    return "zebra";
+  }
+  var lst = anch.split(",");
+  if (lst.length < 0 || lst[lst.length-1] == ""){
+    if (toggle){
+      return "smooth"
+    }
+    return "zebra";
+  }
+  if (toggle){
+    if (lst[lst.length-1] == "zebra"){
+      return "smooth";
+    }
+    return "zebra";
+  }
+  return lst[lst.length-1];
+}
+
+function handleMousedownEvent(e){
+  if (DrawData.drawing){
+    return;
+  }
+  DrawData.startZoom = [ e.offsetX, e.offsetY];
+  DrawData.endZoom = [ e.offsetX, e.offsetY];
+  DrawData.captureMouse = true;
+  setCapture();
+}
+
+function setCapture(){
+  if (DrawData.captureMouse) {
+    DrawData.cvs.onmousemove = handleMousemoveEvent;
+  }
+}
+
+function handleMousemoveEvent(e){
+  if (!DrawData.captureMouse) {
+    return;
+  }
+  DrawData.endZoom = [ e.offsetX, e.offsetY];
+  DrawData.ctxcvs.clearRect(0, 0, DrawData.w, DrawData.h);
+  DrawData.ctxcvs.drawImage(DrawData.buf, 0, 0);
+
+  DrawData.ctxcvs.beginPath();
+  DrawData.ctxcvs.strokeStyle = "red";
+  DrawData.ctxcvs.lineWidth = "4";
+  var w = e.offsetX - DrawData.startZoom[0];
+  var h = e.offsetY - DrawData.startZoom[1];
+  DrawData.ctxcvs.rect(DrawData.startZoom[0], DrawData.startZoom[1], w, h);
+  DrawData.ctxcvs.stroke();
+  DrawData.ctxcvs.closePath();
+
+  DrawData.cvs.onmousemove = null;
+  setTimeout(setCapture, 25);
+}
+
+function handleMandMouseupEvent(e){
+  if (!DrawData.captureMouse){
+    return;
+  }
+  DrawData.endZoom = [ e.offsetX, e.offsetY];
+}
+
+function handleWindowMouseUpEvent(e){
+  if (!DrawData.captureMouse){
+    return;
+  }
+  DrawData.captureMouse = false;
+  var url = window.location.href.split('#')[0] + "#";
+  var dx = DrawData.mandCoords[1]-DrawData.mandCoords[0];
+  var dy = DrawData.mandCoords[3]-DrawData.mandCoords[2];
+  var x0 = Math.min();
+  var x1 = Math.max(DrawData.startZoom[0], DrawData.endZoom[0]);
+  var y0 = Math.min(DrawData.startZoom[1], DrawData.endZoom[1]);
+  var y1 = Math.max();
+
+  var coords = correctAspect(DrawData.startZoom[0], DrawData.endZoom[0],DrawData.startZoom[1], DrawData.endZoom[1]);
+  var x0 = coords[0];
+  var x1 = coords[1];
+  var y0 = coords[2];
+  var y1 = coords[3];
+
+  if (x1-x0 < 10 || y1-y0 <10){
+    if (x0 <75 && y0<45){
+      window.location = url+getMode();
+    } else if (x0 <130 && y0>DrawData.h-50){
+      var l = getCoords();
+      l.push(getMode(true));
+      window.location = url+ l.join(",");
+    }
+    return
+  }
+
+  DrawData.instructionState += 1;
+
+  x0 = DrawData.mandCoords[0] + (x0/DrawData.w)*dx;
+  x1 = DrawData.mandCoords[0] + (x1/DrawData.w)*dx;
+  y0 = DrawData.mandCoords[2] + (y0/DrawData.h)*dy;
+  y1 = DrawData.mandCoords[2] + (y1/DrawData.h)*dy;
+  window.location = url + [x0,x1,y0,y1,getMode()].join(',');
+}
+
+window.onhashchange = function(){
+  draw();
+}
+
+function correctAspect(xa,xb,ya,yb){
+  var x0 = Math.min(xa, xb);
+  var x1 = Math.max(xa, xb);
+  var y0 = Math.min(ya,yb);
+  var y1 = Math.max(ya,yb);
+  var c,d;
+  var dx10 = x1-x0;
+  var dy10 = y1-y0;
+  if ( dx10/dy10 < DrawData.w/DrawData.h){
+    c = (x1+x0)/2;
+    d = ( (DrawData.w/DrawData.h)*dy10 )/2;
+    x1 = c + d;
+    x0 = c - d;
+  } else if ( dx10/dy10 > DrawData.w/DrawData.h){
+    c = (y1+y0)/2;
+    d = ( (DrawData.h/DrawData.w)*dx10 )/2;
+    y1 = c + d;
+    y0 = c - d;
+  }
+  return [x0,x1,y0,y1];
+}
+
+function draw(){
+  var c = getCoords();
+  DrawData.mandCoords = c;
+
+  if (getMode() == "zebra"){
+    DrawData.mand = DrawData.zebra;
+  } else {
+    DrawData.mand = DrawData.smooth;
+  }
+  DrawData.drawCoords = [0,0];
+  DrawData.stepSize = [(c[1]-c[0])/DrawData.w, (c[3]-c[2])/DrawData.h];
+  DrawData.drawing = true;
+  DrawData.ctxcvs.drawImage(DrawData.buf, 0, 0);
+  setTimeout(drawLoop,5);
+}
+
+function drawLoop(){
+  var x = DrawData.mandCoords[0] + DrawData.stepSize[0]*DrawData.drawCoords[0];
+  var y = DrawData.mandCoords[2] + DrawData.stepSize[1]*DrawData.drawCoords[1];
+  DrawData.mand(x, DrawData.stepSize[0], y, DrawData.stepSize[1], DrawData.blockSize, DrawData.blockSize);
+  var ca = new Uint8ClampedArray(DrawData.heap.buffer, 0, DrawData.imgData.data.length);
+  DrawData.imgData.data.set(ca);
+  DrawData.ctx.putImageData(DrawData.imgData,DrawData.drawCoords[0],DrawData.drawCoords[1]);
+  DrawData.ctxcvs.drawImage(DrawData.buf, 0, 0);
+
+  DrawData.drawCoords[0] += DrawData.blockSize;
+  if (DrawData.drawCoords[0] > DrawData.w){
+    DrawData.drawCoords[0] = 0;
+    DrawData.drawCoords[1] += DrawData.blockSize;
+    if (DrawData.drawCoords[1] > DrawData.h){
+      DrawData.drawing = false;
+      finishDraw();
+      return;
+    }
+  }
+  setTimeout(drawLoop, 5);
+}
+
+function finishDraw(){
+  var textColor = "rgba(51, 51, 51, 1)";
+  var background = "rgba(255, 255, 255, 0.9)";
+
+  DrawData.ctxcvs.drawImage(DrawData.buf, 0, 0);
+
+  
+  DrawData.ctxcvs.beginPath();
+  DrawData.ctxcvs.fillStyle = background;
+  DrawData.ctxcvs.fillRect(5,5,75,45);
+  DrawData.ctxcvs.fillRect(5,DrawData.h-5,130,-45);
+  DrawData.ctxcvs.fillStyle = textColor;
+  DrawData.ctxcvs.font = "40px sans-serif";
+  DrawData.ctxcvs.fillText("Top", 10, 40);
+  DrawData.ctxcvs.fillText("Toggle", 10, DrawData.h-15);
+  DrawData.ctxcvs.font = "20px sans-serif";
+
+  if (DrawData.instructionState == 0){
+    DrawData.ctxcvs.fillStyle = background;
+    DrawData.ctxcvs.fillRect(DrawData.w-170,15,168,28);
+    DrawData.ctxcvs.fillStyle = textColor;
+    DrawData.ctxcvs.fillText("Drag to Zoom",DrawData.w-150, 35);
+  } else if (DrawData.instructionState == 1){
+    DrawData.ctxcvs.fillStyle = background;
+    DrawData.ctxcvs.fillRect(DrawData.w-220,15,218,28);
+    DrawData.ctxcvs.fillStyle = textColor;
+    DrawData.ctxcvs.fillText("Click Top to start over",DrawData.w-207,35);
+  } else if (DrawData.instructionState == 2){
+    DrawData.ctxcvs.fillStyle = background;
+    DrawData.ctxcvs.fillRect(DrawData.w-330,15,328,28);
+    DrawData.ctxcvs.fillStyle = textColor;
+    DrawData.ctxcvs.fillText("Use browser navigation to go back",DrawData.w-315,35);
+  }
+
+  DrawData.ctxcvs.stroke();
+  DrawData.ctxcvs.closePath();
+}
+    </script>
+  </body>
+</html>
